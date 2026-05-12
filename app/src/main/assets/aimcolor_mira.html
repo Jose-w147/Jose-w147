@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>AimColor — Mira / Sem câmera</title>
+<style>
+  :root{--bg:#071021;--card:#0b1220;--accent:#00d28a;--muted:#98a2b3}
+  body{margin:0;background:linear-gradient(180deg,var(--bg),#021020);color:#eaf2f7;font-family:Inter,system-ui,Roboto,Arial}
+  .wrap{display:flex;gap:14px;padding:12px;flex-wrap:wrap;justify-content:center}
+  .viewer{background:rgba(255,255,255,0.02);border-radius:12px;padding:10px;box-shadow:0 8px 24px rgba(0,0,0,0.6)}
+  video, canvas{border-radius:8px;max-width:90vw;width:720px;height:auto;background:#000;display:block}
+  .panel{width:360px;background:linear-gradient(180deg,#071018,#041018);border-radius:12px;padding:12px;box-shadow:0 8px 20px rgba(0,0,0,0.6)}
+  h3{margin:4px 0 8px 0}
+  label{font-size:13px;color:var(--muted)}
+  .row{display:flex;gap:8px;align-items:center;margin-top:8px}
+  .btn{background:linear-gradient(90deg,var(--accent),#00b67a);border:none;color:#021214;padding:8px 10px;border-radius:8px;cursor:pointer;font-weight:700}
+  .btn.ghost{background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--muted)}
+  input[type="text"]{width:100%;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.03);background:rgba(255,255,255,0.02);color:inherit}
+  .muted{color:var(--muted);font-size:13px}
+  .status{display:flex;gap:8px;align-items:center}
+  .dot{width:10px;height:10px;border-radius:50%;background:#444}
+  .crosshair{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:auto;z-index:30}
+  .ch-line{width:40px;height:2px;background:rgba(0,255,128,0.9);position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
+  .ch-vert{width:2px;height:40px;background:rgba(0,255,128,0.9);position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
+  .badge{font-weight:700;color:var(--accent)}
+  .info{font-size:13px;color:var(--muted);margin-top:8px}
+  @media (max-width:900px){.panel{width:92vw} video,canvas{width:92vw}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="viewer" id="viewerWrap" style="position:relative;">
+    <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <div class="status"><span class="dot" id="dot"></span><div class="muted" id="statusText">Inativo</div></div>
+      <div class="muted">Mira ativa: <span id="detectState">—</span></div>
+    </div>
+
+    <video id="video" autoplay playsinline muted style="display:none"></video>
+    <canvas id="frame" style="display:none"></canvas>
+    <canvas id="mask" style="display:none;position:absolute;right:8px;bottom:8px;width:160px;height:120px;border-radius:6px;z-index:25"></canvas>
+
+    <div id="crosshair" class="crosshair" title="Arraste a mira">
+      <div class="ch-line" style="width:44px;height:3px"></div>
+      <div class="ch-vert" style="height:44px;width:3px"></div>
+    </div>
+
+    <div class="info" id="hint" style="padding-top:8px">Fonte: nenhuma — escolha abaixo. Use Compartilhar tela para detectar dentro do jogo/janela.</div>
+  </div>
+
+  <div class="panel">
+    <h3>AimColor — Modo Mira (sem usar câmera)</h3>
+
+    <label>Fonte</label>
+    <div class="row">
+      <button id="shareScreenBtn" class="btn">Compartilhar tela</button>
+      <button id="stopShareBtn" class="btn ghost">Parar</button>
+    </div>
+
+    <div class="row" style="margin-top:8px">
+      <input type="file" id="imgFile" accept="image/*" />
+      <button id="useImageBtn" class="btn ghost">Usar imagem</button>
+    </div>
+
+    <div style="margin-top:10px">
+      <label>Preset</label>
+      <select id="preset">
+        <option value="red">Vermelho</option>
+        <option value="green">Verde</option>
+        <option value="yellow">Amarelo</option>
+        <option value="custom">Custom (hex)</option>
+      </select>
+      <div id="customRow" style="margin-top:6px;display:none">
+        <input type="text" id="hexInput" value="#00FF00" />
+      </div>
+    </div>
+
+    <div style="margin-top:10px">
+      <label>Tolerância H (±) <span id="tolHVal" class="badge">12</span></label>
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <button id="decTol" class="btn ghost">—</button>
+        <button id="incTol" class="btn ghost">+</button>
+      </div>
+    </div>
+
+    <div style="margin-top:10px">
+      <label>Uso da mira</label>
+      <div class="row">
+        <button id="sampleBtn" class="btn">Amostrar cor sob mira</button>
+        <button id="autoDetectBtn" class="btn ghost">Detectar contínuo</button>
+      </div>
+      <div class="muted" style="margin-top:6px">Amostra apenas a região central em volta da mira (mais leve).</div>
+    </div>
+
+    <div style="margin-top:10px">
+      <label>Opções</label>
+      <div style="display:flex;gap:8px;margin-top:6px;align-items:center">
+        <label class="muted"><input type="checkbox" id="vibrateOnDetect"> Vibrar ao detectar</label>
+        <label class="muted"><input type="checkbox" id="showMask"> Mostrar mini-máscara</label>
+      </div>
+    </div>
+
+    <div style="margin-top:10px">
+      <label>Resultado</label>
+      <div class="muted">Pixel HSV: <span id="pixelHSV">—</span></div>
+      <div class="muted">Status da mira: <span id="miraResult">—</span></div>
+    </div>
+
+    <div style="margin-top:10px" class="muted">Notas: Compartilhar tela pede permissão ao navegador; a página NÃO abrirá a câmera automaticamente.</div>
+  </div>
+</div>
+
+<script>
+/* Código JS da versão completa — amostragem sob mira, screen share, carregamento de imagem, detecção contínua, vibrar, preview de máscara */
+const video = document.getElementById('video');
+const frame = document.getElementById('frame');
+const maskCan = document.getElementById('mask');
+const cross = document.getElementById('crosshair');
+const hint = document.getElementById('hint');
+const dot = document.getElementById('dot');
+const statusText = document.getElementById('statusText');
+
+const shareBtn = document.getElementById('shareScreenBtn');
+const stopBtn = document.getElementById('stopShareBtn');
+const imgFile = document.getElementById('imgFile');
+const useImageBtn = document.getElementById('useImageBtn');
+
+const presetSel = document.getElementById('preset');
+const customRow = document.getElementById('customRow');
+const hexInput = document.getElementById('hexInput');
+
+const decTol = document.getElementById('decTol');
+const incTol = document.getElementById('incTol');
+const tolHVal = document.getElementById('tolHVal');
+
+const sampleBtn = document.getElementById('sampleBtn');
+const autoDetectBtn = document.getElementById('autoDetectBtn');
+
+const vibrateChk = document.getElementById('vibrateOnDetect');
+const showMaskChk = document.getElementById('showMask');
+
+const pixelHSV = document.getElementById('pixelHSV');
+const miraResult = document.getElementById('miraResult');
+const detectState = document.getElementById('detectState');
+
+let tolH = 12;
+tolHVal.textContent = tolH;
+
+let activeStream = null;
+let usingImage = false;
+let autoDetect = false;
+let loopReq = null;
+
+function rgbToHsvOpencv(r,g,b){
+  r/=255; g/=255; b/=255;
+  const max = Math.max(r,g,b), min = Math.min(r,g,b);
+  const d = max - min;
+  let h=0; let s = (max === 0) ? 0 : d/max; let v = max;
+  if(d === 0) h = 0; else {
+    if(max === r) h = (g-b)/d + (g < b ? 6 : 0);
+    else if(max === g) h = (b-r)/d + 2;
+    else h = (r-g)/d + 4;
+    h /= 6;
+  }
+  return [Math.round(h*179), Math.round(s*255), Math.round(v*255)];
+}
+
+function hexToRgb(hex){
+  const s = (hex||'').replace('#','').trim();
+  if(s.length !== 6) return [0,255,0];
+  return [parseInt(s.substr(0,2),16), parseInt(s.substr(2,2),16), parseInt(s.substr(4,2),16)];
+}
+
+function getPresetRanges(){
+  const p = presetSel.value;
+  if(p === 'red') return [[0,120,70,10,255,255],[170,120,70,180,255,255]];
+  if(p === 'green') return [[35,50,50,85,255,255]];
+  if(p === 'yellow') return [[20,100,100,30,255,255]];
+  if(p === 'custom'){
+    const rgb = hexToRgb(hexInput.value);
+    const hsv = rgbToHsvOpencv(rgb[0],rgb[1],rgb[2]);
+    const h = hsv[0], s = hsv[1], v = hsv[2];
+    let lowH = (h - tolH + 180) % 180;
+    let highH = (h + tolH) % 180;
+    if(lowH <= highH) return [[lowH,0,0,highH,255,255]];
+    return [[0,0,0,highH,255,255],[lowH,0,0,179,255,255]];
+  }
+  return [];
+}
+
+function withinRanges(h,s,v, ranges){
+  for(const r of ranges){
+    if(h >= r[0] && h <= r[3] && s >= r[1] && s <= r[4] && v >= r[2] && v <= r[5]) return true;
+  }
+  return false;
+}
+
+function updateStatus(text, color){
+  statusText.textContent = text;
+  dot.style.background = color || '#444';
+}
+
+function enableMaskPreview(flag){
+  maskCan.style.display = flag ? '' : 'none';
+}
+
+shareBtn.addEventListener('click', async () => {
+  try{
+    const s = await navigator.mediaDevices.getDisplayMedia({video:true});
+    activeStream = s;
+    video.srcObject = s;
+    video.style.display = '';
+    frame.style.display = '';
+    updateStatus('Compartilhando tela', '#ffd24d');
+    usingImage = false;
+    hint.textContent = 'Compartilhando tela — arraste a mira sobre a área que deseja checar.';
+    s.getVideoTracks()[0].addEventListener('ended', () => { stopShare(); });
+  }catch(e){
+    alert('Falha ao compartilhar tela: ' + e);
+    updateStatus('Erro', '#ff5b7a');
+  }
+});
+
+function stopShare(){
+  if(activeStream){
+    try{ activeStream.getTracks().forEach(t=>t.stop()); }catch(e){}
+    activeStream = null;
+  }
+  video.pause(); video.srcObject = null;
+  video.style.display = 'none';
+  frame.style.display = 'none';
+  updateStatus('Inativo', '#444');
+  hint.textContent = 'Fonte: nenhuma — escolha Compartilhar tela ou Carregar imagem.';
+  enableMaskPreview(false);
+  usingImage = false;
+  stopAutoDetect();
+}
+
+stopBtn.addEventListener('click', stopShare);
+
+useImageBtn.addEventListener('click', () => {
+  const f = imgFile.files[0];
+  if(!f) return alert('Escolha uma imagem primeiro.');
+  const url = URL.createObjectURL(f);
+  const img = new Image();
+  img.onload = () => {
+    frame.width = img.width; frame.height = img.height;
+    const ctx = frame.getContext('2d');
+    ctx.drawImage(img,0,0);
+    frame.style.display = '';
+    video.style.display = 'none';
+    usingImage = true;
+    updateStatus('Imagem carregada', '#ffd24d');
+    hint.textContent = 'Imagem carregada — arraste a mira e use "Amostrar" ou "Detectar contínuo".';
+    enableMaskPreview(showMaskChk.checked);
+  };
+  img.src = url;
+});
+
+presetSel.addEventListener('change', () => {
+  customRow.style.display = (presetSel.value === 'custom') ? '' : 'none';
+});
+
+incTol.addEventListener('click', () => { tolH = Math.min(90, tolH+2); tolHVal.textContent = tolH; });
+decTol.addEventListener('click', () => { tolH = Math.max(0, tolH-2); tolHVal.textContent = tolH; });
+
+(function(){
+  const ch = cross;
+  let dragging = false, startX=0,startY=0, origX=0,origY=0;
+  ch.addEventListener('pointerdown', (e)=>{
+    dragging = true;
+    ch.setPointerCapture(e.pointerId);
+    startX = e.clientX; startY = e.clientY;
+    const rect = ch.getBoundingClientRect();
+    origX = rect.left; origY = rect.top;
+  });
+  window.addEventListener('pointermove', (e)=>{
+    if(!dragging) return;
+    const dx = e.clientX - startX, dy = e.clientY - startY;
+    const parent = document.getElementById('viewerWrap').getBoundingClientRect();
+    let nx = origX + dx, ny = origY + dy;
+    const pad = 4;
+    nx = Math.max(parent.left+pad, Math.min(nx, parent.right - ch.offsetWidth - pad));
+    ny = Math.max(parent.top+pad, Math.min(ny, parent.bottom - ch.offsetHeight - pad));
+    ch.style.left = (nx - parent.left + ch.offsetWidth/2) + 'px';
+    ch.style.top = (ny - parent.top + ch.offsetHeight/2) + 'px';
+    ch.style.transform = 'translate(-50%,-50%)';
+  });
+  window.addEventListener('pointerup', (e)=>{
+    if(dragging){ dragging=false; try{ cross.releasePointerCapture(e.pointerId);}catch{} }
+  });
+})();
+
+function sampleUnderCrosshair(region=3){
+  const ctx = frame.getContext('2d');
+  if(!usingImage){
+    const w = video.videoWidth || 640, h = video.videoHeight || 480;
+    if(frame.width !== w || frame.height !== h){ frame.width = w; frame.height = h; }
+    try{ ctx.drawImage(video,0,0,w,h); }catch(e){}
+  }
+  const frameRect = frame.getBoundingClientRect();
+  if(frameRect.width === 0 || frameRect.height === 0) return null;
+  const chRect = cross.getBoundingClientRect();
+  const cx = chRect.left + chRect.width/2;
+  const cy = chRect.top + chRect.height/2;
+  const x = Math.round((cx - frameRect.left) * (frame.width / frameRect.width));
+  const y = Math.round((cy - frameRect.top) * (frame.height / frameRect.height));
+  const sx = Math.max(0, x - region);
+  const sy = Math.max(0, y - region);
+  const sw = Math.min(frame.width - sx, region*2+1);
+  const sh = Math.min(frame.height - sy, region*2+1);
+  if(sw <=0 || sh <=0) return null;
+  const img = ctx.getImageData(sx, sy, sw, sh).data;
+  let r=0,g=0,b=0,count=0;
+  for(let i=0;i<img.length;i+=4){ r += img[i]; g += img[i+1]; b += img[i+2]; count++; }
+  if(count === 0) return null;
+  r = Math.round(r/count); g = Math.round(g/count); b = Math.round(b/count);
+  return {r,g,b,x,y,sw,sh,sx,sy};
+}
+
+function updateMaskPreview(maskPixels, w, h){
+  if(!showMaskChk.checked){ maskCan.style.display = 'none'; return; }
+  maskCan.style.display = '';
+  maskCan.width = w; maskCan.height = h;
+  const mctx = maskCan.getContext('2d');
+  const img = mctx.createImageData(w,h);
+  for(let i=0, j=0;i<maskPixels.length;i++, j+=4){
+    const v = maskPixels[i];
+    img.data[j] = v; img.data[j+1] = 0; img.data[j+2] = 0; img.data[j+3] = v;
+  }
+  mctx.putImageData(img,0,0);
+}
+
+function buildMaskFromBlock(imgData, w, h){
+  const ranges = getPresetRanges();
+  const mask = new Uint8ClampedArray(w*h);
+  for(let i=0, pix=0;i<imgData.length;i+=4,pix++){
+    const r = imgData[i], g=imgData[i+1], b=imgData[i+2];
+    const hsv = rgbToHsvOpencv(r,g,b);
+    const ok = withinRanges(hsv[0], hsv[1], hsv[2], ranges);
+    mask[pix] = ok ? 255 : 0;
+  }
+  return mask;
+}
+
+function checkOnce(){
+  const s = sampleUnderCrosshair(2); 
+  if(!s){ pixelHSV.textContent = '—'; miraResult.textContent = 'Sem fonte'; detectState.textContent='—'; return; }
+  const hvs = rgbToHsvOpencv(s.r,s.g,s.b);
+  pixelHSV.textContent = `H:${hvs[0]} S:${hvs[1]} V:${hvs[2]}`;
+  const ranges = getPresetRanges();
+  const ok = withinRanges(hvs[0],hvs[1],hvs[2],ranges);
+  miraResult.textContent = ok ? 'ALVO!' : 'Nada';
+  detectState.textContent = ok ? 'Detectado' : 'Não detectado';
+  const ctx = frame.getContext('2d');
+  const img = ctx.getImageData(s.sx,s.sy,s.sw,s.sh);
+  const mask = buildMaskFromBlock(img.data, s.sw, s.sh);
+  updateMaskPreview(mask, s.sw, s.sh);
+  if(ok && vibrateChk.checked && navigator.vibrate) navigator.vibrate(80);
+  cross.style.filter = ok ? 'drop-shadow(0 0 10px rgba(0,255,128,0.9))' : 'none';
+}
+
+function startAutoDetect(){
+  if(autoDetect) return;
+  autoDetect = true;
+  autoDetectBtn.textContent = 'Parar detecção';
+  detectLoop();
+}
+function stopAutoDetect(){
+  autoDetect = false;
+  autoDetectBtn.textContent = 'Detectar contínuo';
+  if(loopReq) cancelAnimationFrame(loopReq);
+}
+function detectLoop(){
+  if(!autoDetect) return;
+  checkOnce();
+  loopReq = requestAnimationFrame(detectLoop);
+}
+
+sampleBtn.addEventListener('click', () => { checkOnce(); });
+autoDetectBtn.addEventListener('click', () => { if(autoDetect) stopAutoDetect(); else startAutoDetect(); });
+showMaskChk.addEventListener('change', () => { if(!showMaskChk.checked) maskCan.style.display = 'none'; });
+window.addEventListener('beforeunload', () => { stopShare(); });
+updateStatus('Inativo','#444');
+enableMaskPreview(false);
+</script>
+
+</body>
+</html>
